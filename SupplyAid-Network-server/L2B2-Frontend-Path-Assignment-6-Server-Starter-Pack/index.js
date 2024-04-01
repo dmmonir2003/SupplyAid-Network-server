@@ -20,12 +20,15 @@ async function run() {
     try {
         // Connect to MongoDB
         await client.connect();
-        console.log("Connected to MongoDB");
+
 
         const db = client.db('assignment');
         const collection = db.collection('users');
         const supplyCollection = db.collection('supplies');
         const donationCollection = db.collection('donation')
+        const volunteerCollection = db.collection('volunteer');
+        const gratitudeCollection = db.collection('gratitude');
+        const testimonialCollection = db.collection('testimonial');
 
         // User Registration
         app.post('/api/v1/register', async (req, res) => {
@@ -79,6 +82,10 @@ async function run() {
         });
 
 
+
+
+
+
         // ==============================================================
         // WRITE YOUR CODE HERE
 
@@ -106,10 +113,10 @@ async function run() {
         app.put('/api/v1/supplies/:id', async (req, res) => {
             try {
                 const { id } = req.params;
-                console.log('Updating supply with ID:', id);
+
 
                 const { image, title, category, quantity, description } = req.body;
-                console.log('Updated fields:', { image, title, category, quantity, description });
+
 
                 const updatedSupply = await supplyCollection.findOneAndUpdate(
                     { _id: new ObjectId(id) },
@@ -151,7 +158,7 @@ async function run() {
                         supply: deletedSupply.value
                     });
                 } else {
-                    console.log('Supply not found');
+
                     return res.status(404).json({ success: false, message: 'Supply not found' });
                 }
             } catch (error) {
@@ -195,6 +202,8 @@ async function run() {
             }
         });
 
+
+        //   donation code start ---------------------
 
 
         app.post('/api/v1/donations', async (req, res) => {
@@ -242,10 +251,6 @@ async function run() {
                 res.status(500).json({ success: false, message: error.message });
             }
         });
-
-
-
-
 
 
         app.get('/api/v1/donations/category/:category', async (req, res) => {
@@ -325,6 +330,257 @@ async function run() {
 
 
 
+        app.get('/api/v1/donations/all-donors', async (req, res) => {
+            try {
+                const donorData = await donationCollection.aggregate([
+                    {
+                        $group: {
+                            _id: "$userId",
+                            totalAmount: { $sum: "$amount" }
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: "users",
+                            let: { userId: { $toObjectId: "$_id" } },
+                            pipeline: [
+                                { $match: { $expr: { $eq: ["$_id", "$$userId"] } } },
+                                { $project: { _id: 1, name: 1, email: 1 } }
+                            ],
+                            as: "user"
+                        }
+                    },
+                    {
+                        $unwind: "$user"
+                    },
+                    {
+                        $project: {
+                            _id: "$user._id",
+                            name: "$user.name",
+                            email: "$user.email",
+                            totalAmount: 1
+                        }
+                    },
+                    {
+                        $sort: { totalAmount: -1 }
+                    }
+                ]).toArray();
+
+                res.json({ success: true, donors: donorData });
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+
+        //   donation code end ---------------------
+
+
+
+
+        // volunteer  code _   start-------------------------------------
+
+        // Volunteer Application
+        app.post('/api/v1/volunteer-application', async (req, res) => {
+            try {
+                const { name, email, phoneNumber, address, facebookId, volunteerFor } = req.body;
+
+
+                const existingVolunteer = await volunteerCollection.findOne({ email });
+                if (existingVolunteer) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Volunteer application already exists for this email'
+                    });
+                }
+
+
+                await volunteerCollection.insertOne({
+                    name,
+                    email,
+                    phoneNumber,
+                    address,
+                    facebookId,
+                    volunteerFor,
+                    isApproved: false
+                });
+
+                res.status(201).json({
+                    success: true,
+                    message: 'Volunteer application submitted successfully'
+                });
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+
+
+        // Get All Volunteer Applications
+        app.get('/api/v1/volunteer-applications', async (req, res) => {
+            try {
+                const volunteerApplications = await volunteerCollection.find({}).toArray();
+                res.json({ success: true, volunteerApplications });
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+        // Approve Volunteer Application
+        app.put('/api/v1/volunteer-applications/approve/:id', async (req, res) => {
+            try {
+                const { id } = req.params;
+
+                // Validate if the ID is a valid ObjectId
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).json({ success: false, message: 'Invalid volunteer application ID' });
+                }
+
+
+                const updatedApplication = await volunteerCollection.findOneAndUpdate(
+                    { _id: new ObjectId(id) },
+                    { $set: { isApproved: true } },
+                    { returnOriginal: false }
+                );
+
+                if (updatedApplication) {
+                    return res.status(200).json({
+                        success: true,
+                        message: 'Volunteer application approved successfully',
+
+                    });
+                } else {
+                    return res.status(404).json({ success: false, message: 'Volunteer application not found' });
+                }
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+
+
+        app.delete('/api/v1/volunteer-applications/:id', async (req, res) => {
+            try {
+                const { id } = req.params;
+
+
+
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).json({ success: false, message: 'Invalid volunteer application ID' });
+                }
+
+                const deletedApplication = await volunteerCollection.findOneAndDelete({ _id: new ObjectId(id) });
+
+                if (deletedApplication) {
+                    return res.status(200).json({
+                        success: true,
+                        message: 'Volunteer application deleted successfully',
+
+                    });
+                } else {
+                    return res.status(404).json({ success: false, message: 'Volunteer application not found' });
+                }
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+
+
+
+        // Get All Approved Volunteer Applications
+        app.get('/api/v1/volunteer-applications/approved', async (req, res) => {
+            try {
+                const approvedVolunteerApplications = await volunteerCollection.find({ isApproved: true }).toArray();
+                res.json({ success: true, approvedVolunteerApplications });
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+
+
+
+        // /gratitude-----------start
+
+
+
+        app.post('/api/v1/gratitude', async (req, res) => {
+            try {
+                const { name, location, message, projectName, image } = req.body;
+                const userGratitudeTime = new Date();
+
+                // Insert gratitude data into MongoDB
+                const result = await gratitudeCollection.insertOne({
+                    name,
+                    location,
+                    message,
+                    projectName,
+                    image,
+                    userGratitudeTime
+                });
+
+                res.status(201).json({
+                    success: true,
+                    message: 'Gratitude connection created successfully'
+                });
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+
+
+        app.get('/api/v1/gratitude', async (req, res) => {
+            try {
+                // Query MongoDB for all gratitude entries
+                const gratitudeEntries = await gratitudeCollection.find({}).toArray();
+
+                // Respond with the gratitude entries as JSON
+                res.json({
+                    success: true,
+                    gratitudeEntries
+                });
+            } catch (error) {
+                // If an error occurs, respond with an error message
+                res.status(500).json({
+                    success: false,
+                    message: 'Failed to retrieve gratitude entries',
+                    error: error.message
+                });
+            }
+        });
+
+
+        //     testimonials   ----------start
+
+
+
+        app.post('/api/v1/testimonials', async (req, res) => {
+            try {
+                const { name, description, image } = req.body;
+
+                // Insert donor testimonial into the database
+                await testimonialCollection.insertOne({ name, description, image });
+
+                res.status(201).json({
+                    success: true,
+                    message: 'Testimonial created successfully',
+                });
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
+
+        // Get all testimonials
+        app.get('/api/v1/testimonials', async (req, res) => {
+            try {
+                const testimonials = await testimonialCollection.find({}).toArray();
+                res.json(testimonials);
+            } catch (error) {
+                res.status(500).json({ success: false, message: error.message });
+            }
+        });
 
 
 
